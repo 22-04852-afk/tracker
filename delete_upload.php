@@ -21,7 +21,7 @@ if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) === 0) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['file_id'])) {
-    header('Location: upload.php?deleted=0');
+    header('Location: uploads.php?deleted=0');
     exit;
 }
 
@@ -30,7 +30,7 @@ $getFileQuery = "SELECT id, file_path FROM uploaded_files WHERE id = $fileId LIM
 $getFileResult = mysqli_query($conn, $getFileQuery);
 
 if (!$getFileResult || mysqli_num_rows($getFileResult) === 0) {
-    header('Location: upload.php?deleted=0');
+    header('Location: uploads.php?deleted=0');
     exit;
 }
 
@@ -42,7 +42,7 @@ $deletedRows = 0;
 
 // Primary delete path: rows linked by source_upload_id.
 if (!mysqli_query($conn, "DELETE FROM ojt_logs WHERE source_upload_id = $fileId")) {
-    header('Location: upload.php?deleted=0');
+    header('Location: uploads.php?deleted=0');
     exit;
 }
 
@@ -99,15 +99,15 @@ if (is_file($fullPath)) {
 }
 
 if (!$deleteOk) {
-    header('Location: upload.php?deleted=0');
+    header('Location: uploads.php?deleted=0');
     exit;
 }
 
 $deleteRowQuery = "DELETE FROM uploaded_files WHERE id = $fileId";
 if (!mysqli_query($conn, $deleteRowQuery)) {
-    header('Location: upload.php?deleted=0');
+    header('Location: uploads.php?deleted=0');
     exit;
 }
 
-header('Location: upload.php?deleted=1&deleted_rows=' . max(0, (int)$deletedRows));
+header('Location: uploads.php?deleted=1&deleted_rows=' . max(0, (int)$deletedRows));
 exit;

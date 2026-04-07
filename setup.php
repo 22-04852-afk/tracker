@@ -1,5 +1,6 @@
 <?php
 include 'config.php';
+include_once 'functions.php';
 
 // Create ojt_logs table
 $create_ojt_logs = "CREATE TABLE IF NOT EXISTS ojt_logs (
@@ -7,7 +8,7 @@ $create_ojt_logs = "CREATE TABLE IF NOT EXISTS ojt_logs (
     date DATE NOT NULL,
     time_in TIME NOT NULL,
     time_out TIME NOT NULL,
-    hours DECIMAL(5, 2) NOT NULL,
+    hours INT NOT NULL,
     source_upload_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY unique_date (date)
@@ -53,37 +54,10 @@ if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) === 0) {
     }
 }
 
-// Insert Philippine holidays for 2026
-$holidays_data = array(
-    array('2026-01-01', 'New Year Day'),
-    array('2026-02-10', 'EDSA Revolution Anniversary'),
-    array('2026-02-11', 'Chinese New Year'),
-    array('2026-02-12', 'Chinese New Year'),
-    array('2026-04-09', 'Day of Valor'),
-    array('2026-04-17', 'Maundy Thursday'),
-    array('2026-04-18', 'Good Friday'),
-    array('2026-04-19', 'Black Saturday'),
-    array('2026-05-01', 'Labor Day'),
-    array('2026-06-12', 'Independence Day'),
-    array('2026-06-24', 'Feast of St. John'),
-    array('2026-08-13', 'Feast of Sto. Nino'),
-    array('2026-08-21', 'Ninoy Aquino Day'),
-    array('2026-08-31', 'National Heroes Day'),
-    array('2026-11-01', 'All Saints Day'),
-    array('2026-11-30', 'Bonifacio Day'),
-    array('2026-12-08', 'Immaculate Conception'),
-    array('2026-12-25', 'Christmas Day'),
-    array('2026-12-26', 'Additional Special Day'),
-    array('2026-12-30', 'Rizal Day'),
-    array('2026-12-31', 'New Years Eve')
-);
-
-// Insert holidays (ignore if already exists)
-foreach ($holidays_data as $holiday) {
-    $date = $holiday[0];
-    $name = $holiday[1];
-    $insert_holiday = "INSERT IGNORE INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')";
-    mysqli_query($conn, $insert_holiday);
+// Auto-seed Philippine holidays for nearby years so users don't need manual input.
+$baseYear = (int) date('Y');
+for ($year = $baseYear - 1; $year <= $baseYear + 2; $year++) {
+    seedPhilippineHolidays($conn, $year);
 }
 
 echo "Database setup completed successfully!";

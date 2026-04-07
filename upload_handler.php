@@ -75,7 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                 if ($rowIndex == 1) continue;
 
                 // Get cell values
-                $dateValue = $sheet->getCell("A$rowIndex")->getValue();
+                $dateCell = $sheet->getCell("A$rowIndex");
+                $dateValue = $dateCell->getValue();
+                $dateFormattedValue = $dateCell->getFormattedValue();
                 $timeInValue = $sheet->getCell("B$rowIndex")->getFormattedValue();
                 $timeOutValue = $sheet->getCell("C$rowIndex")->getFormattedValue();
 
@@ -85,14 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                 }
 
                 // Convert date
-                if (is_numeric($dateValue)) {
-                    // Excel date serial number
-                    $date = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($dateValue)->format('Y-m-d');
-                } else {
-                    // Try to parse as string
-                    $parsedDateTs = strtotime((string)$dateValue);
-                    $date = $parsedDateTs ? date('Y-m-d', $parsedDateTs) : '';
-                }
+                $date = parseSpreadsheetDate($dateValue, $dateFormattedValue);
 
                 if (!$date || $date === '1970-01-01') {
                     $skipped++;

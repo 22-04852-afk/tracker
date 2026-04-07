@@ -1,3 +1,76 @@
+<?php
+include 'config.php';
+include 'functions.php';
+
+$cleanupMessage = '';
+
+// Delete log entry
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
+    $delete_id = $_POST['delete_id'];
+    $delete_query = "DELETE FROM ojt_logs WHERE id = $delete_id";
+
+    if (mysqli_query($conn, $delete_query)) {
+        header("Location: logs.php?deleted=1");
+        exit;
+    }
+}
+
+// Delete unlinked logs (legacy rows not attached to uploaded sheets)
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_unlinked') {
+    $hasSourceColumn = false;
+    $checkColumnForDelete = mysqli_query($conn, "SHOW COLUMNS FROM ojt_logs LIKE 'source_upload_id'");
+    if ($checkColumnForDelete && mysqli_num_rows($checkColumnForDelete) > 0) {
+        $hasSourceColumn = true;
+    }
+
+    if ($hasSourceColumn && mysqli_query($conn, "DELETE FROM ojt_logs WHERE source_upload_id IS NULL")) {
+        $cleaned = max(0, (int)mysqli_affected_rows($conn));
+        header("Location: logs.php?cleaned=$cleaned");
+        exit;
+    }
+}
+
+if (isset($_GET['cleaned'])) {
+    $cleanupMessage = 'Deleted unlinked logs: ' . max(0, (int)$_GET['cleaned']) . '.';
+}
+
+$unlinkedCount = 0;
+$checkSourceColumn = mysqli_query($conn, "SHOW COLUMNS FROM ojt_logs LIKE 'source_upload_id'");
+if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) > 0) {
+    $unlinkedResult = mysqli_query($conn, "SELECT COUNT(*) AS count_unlinked FROM ojt_logs WHERE source_upload_id IS NULL");
+    if ($unlinkedResult) {
+        $unlinkedRow = mysqli_fetch_assoc($unlinkedResult);
+        $unlinkedCount = (int)($unlinkedRow['count_unlinked'] ?? 0);
+    }
+}
+
+// Get all logs
+$logs_query = "
+    SELECT l.*, 
+           CASE 
+               WHEN h.holiday_date IS NOT NULL THEN h.holiday_name
+               ELSE 'Regular day'
+           END as day_type
+    FROM ojt_logs l
+    LEFT JOIN holidays h ON l.date = h.holiday_date
+    ORDER BY l.date DESC
+";
+
+$logs_result = mysqli_query($conn, $logs_query);
+$total_logs = mysqli_num_rows($logs_result);
+
+// Calculate stats
+$total_hours = getTotalHours($conn);
+$required_hours = getRequiredHours($conn);
+$total_days = getTotalOJTDays($conn);
+$days_left = calculateDaysLeft($conn, $required_hours);
+$dashboardStats = array(
+    'total_hours' => $total_hours,
+    'required_hours' => $required_hours,
+    'progress_percent' => min(100, ($required_hours > 0 ? ($total_hours / $required_hours) * 100 : 0)),
+);
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +78,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>All OJT Logs</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
     <style>
         * {
             margin: 0;
@@ -14,10 +88,10 @@
 
         body {
             font-family: 'Poppins', sans-serif;
-            background-color: #ffd6e0;
-            color: #555;
+            background-color: var(--panel);
+            color: var(--ink);
             min-height: 100vh;
-            padding: 15px;
+            padding: 0;
         }
 
         .container {
@@ -33,8 +107,13 @@
         .header h1 {
             font-size: 26px;
             font-weight: 700;
-            color: #ff8fab;
+            color: var(--pink-strong);
             margin-bottom: 5px;
+        }
+
+        .header h1 i {
+            margin-right: 8px;
+            font-size: 22px;
         }
 
         .header p {
@@ -58,7 +137,7 @@
         }
 
         .stat-chip {
-            background: linear-gradient(90deg, #ffc2d1, #ff8fab);
+            background: linear-gradient(90deg, var(--accent-grad-start, var(--pink)), var(--accent-grad-end, var(--pink-strong)));
             color: white;
             padding: 10px 15px;
             border-radius: 10px;
@@ -73,11 +152,11 @@
             font-size: 14px;
         }
 
-        .search-box {
+        .logs-search-box {
             margin-bottom: 20px;
         }
 
-        .search-input {
+        .logs-search-input {
             width: 100%;
             padding: 12px;
             border: 2px solid #f0f0f0;
@@ -86,9 +165,9 @@
             font-family: 'Poppins', sans-serif;
         }
 
-        .search-input:focus {
+        .logs-search-input:focus {
             outline: none;
-            border-color: #ff8fab;
+            border-color: var(--pink);
             box-shadow: 0 0 0 3px rgba(255, 139, 171, 0.1);
         }
 
@@ -113,20 +192,20 @@
             gap: 10px;
             margin-bottom: 14px;
             padding: 10px 12px;
-            border: 1px solid #f2dbe4;
+            border: 1px solid var(--accent-border, var(--line));
             border-radius: 10px;
-            background: #fff7fa;
+            background: var(--pink-soft);
         }
 
         .cleanup-meta {
             font-size: 12px;
-            color: #a56b81;
+            color: var(--pink-strong);
             font-weight: 600;
         }
 
         .cleanup-btn {
             border: none;
-            background: #ff8fab;
+            background: var(--pink);
             color: white;
             border-radius: 8px;
             padding: 8px 12px;
@@ -137,7 +216,7 @@
         }
 
         .cleanup-btn:hover {
-            background: #ff6b9d;
+            background: var(--pink-strong);
         }
 
         .log-item {
@@ -152,8 +231,8 @@
         }
 
         .log-item:hover {
-            background: #fff5f7;
-            border-color: #ffc2d1;
+            background: var(--pink-soft);
+            border-color: var(--accent-border, var(--line));
         }
 
         .log-content {
@@ -175,14 +254,14 @@
         .log-hours {
             text-align: right;
             font-weight: 700;
-            color: #ff8fab;
+            color: var(--pink-strong);
             font-size: 16px;
         }
 
         .log-delete {
             margin-left: 10px;
-            background: #ffe0e6;
-            color: #ff6b9d;
+            background: var(--pink-soft);
+            color: var(--pink-strong);
             border: none;
             padding: 5px 10px;
             border-radius: 6px;
@@ -194,7 +273,7 @@
         }
 
         .log-delete:hover {
-            background: #ff6b9d;
+            background: var(--pink-strong);
             color: white;
         }
 
@@ -206,7 +285,7 @@
         }
 
         .empty-message a {
-            color: #ff8fab;
+            color: var(--pink-strong);
             text-decoration: none;
             font-weight: 600;
         }
@@ -215,7 +294,7 @@
             display: block;
             text-align: center;
             padding: 12px;
-            background: linear-gradient(90deg, #ffc2d1, #ff8fab);
+            background: linear-gradient(90deg, var(--accent-grad-start, var(--pink)), var(--accent-grad-end, var(--pink-strong)));
             color: white;
             text-decoration: none;
             border-radius: 12px;
@@ -225,183 +304,104 @@
             transition: all 0.3s ease;
         }
 
+        .btn-back i {
+            margin-right: 8px;
+        }
+
         .btn-back:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(255, 139, 171, 0.3);
         }
 
-        .app-topbar {
+        body.modal-open .container {
+            filter: blur(7px);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .confirm-modal-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 56px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(8px);
-            border-bottom: 1px solid #f0d9e1;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 0 14px;
-            z-index: 1000;
-        }
-
-        .app-title {
-            font-size: 15px;
-            font-weight: 700;
-            color: #ff6b9d;
-        }
-
-        .app-menu-btn {
-            border: none;
-            background: #ffe6ee;
-            color: #ff6b9d;
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
+            inset: 0;
+            background: rgba(252, 239, 247, 0.58);
+            backdrop-filter: blur(2px);
             display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1200;
+            padding: 16px;
         }
 
-        .app-desktop-btn {
-            width: 34px;
-            height: 34px;
-            border: 1px solid #ead9e3;
-            border-radius: 10px;
+        .confirm-modal-overlay.show {
+            display: flex;
+        }
+
+        .confirm-modal {
+            width: min(430px, 100%);
             background: #fff;
-            color: #a06784;
-            font-size: 16px;
-            cursor: pointer;
+            border-radius: 18px;
+            border: 1px solid #f2e7ed;
+            box-shadow: 0 18px 44px rgba(43, 30, 37, 0.16);
+            padding: 24px 22px 18px;
+            text-align: center;
+        }
+
+        .confirm-modal-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--pink-soft);
+            color: var(--pink-strong);
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            font-size: 28px;
+            margin-bottom: 12px;
         }
 
-        .app-sidebar {
-            position: fixed;
-            top: 56px;
-            left: 0;
-            bottom: 0;
-            width: 220px;
-            background: #fff;
-            border-right: 1px solid #f0d9e1;
-            padding: 14px;
-            z-index: 999;
-            overflow-y: auto;
-            transition: width 0.2s ease, transform 0.25s ease;
-            overflow-x: hidden;
+        .confirm-modal h5 {
+            color: #27222f;
+            font-size: 30px;
+            font-weight: 800;
+            line-height: 1.15;
+            margin: 0 0 10px;
         }
 
-        .app-nav {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+        .confirm-modal p {
+            font-size: 14px;
+            color: #8f95a1;
+            line-height: 1.45;
+            margin: 0 auto 18px;
+            max-width: 330px;
         }
 
-        .app-nav a {
-            text-decoration: none;
-            color: #a56b81;
-            padding: 10px 12px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-            border: 1px solid transparent;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .confirm-modal p strong {
+            color: #4a4051;
+            font-weight: 700;
         }
 
-        .app-nav a .nav-icon {
-            width: 18px;
-            text-align: center;
-            flex-shrink: 0;
+        .confirm-delete-btn {
+            width: 100%;
+            border: none;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent-grad-start, var(--pink)), var(--accent-grad-end, var(--pink-strong)));
+            color: #fff;
+            font-family: 'Poppins', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            padding: 12px 18px;
+            cursor: pointer;
+            margin-bottom: 10px;
         }
 
-        .app-nav a:hover,
-        .app-nav a.active {
-            background: #fff2f6;
-            color: #ff6b9d;
-            border-color: #ffd4e2;
-        }
-
-        .app-page {
-            margin-left: 220px;
-            padding-top: 72px;
-            transition: margin-left 0.2s ease;
-        }
-
-        body.sidebar-collapsed .app-sidebar {
-            width: 86px;
-            padding-left: 10px;
-            padding-right: 10px;
-        }
-
-        body.sidebar-collapsed .app-nav a {
-            justify-content: center;
-            padding: 10px;
-        }
-
-        body.sidebar-collapsed .app-nav a .nav-label {
-            display: none;
-        }
-
-        body.sidebar-collapsed .app-page {
-            margin-left: 86px;
-        }
-
-        body.sidebar-hidden .app-sidebar {
-            transform: translateX(-100%);
-        }
-
-        body.sidebar-hidden .app-page {
-            margin-left: 0;
-        }
-
-        .app-overlay {
-            display: none;
-        }
-
-        @media (max-width: 900px) {
-            .app-menu-btn {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .app-desktop-btn {
-                display: none;
-            }
-
-            .app-sidebar {
-                transform: translateX(-100%);
-                transition: transform 0.25s ease;
-            }
-
-            body.sidebar-open .app-sidebar {
-                transform: translateX(0);
-            }
-
-            .app-page {
-                margin-left: 0;
-            }
-
-            body.sidebar-collapsed .app-page {
-                margin-left: 0;
-            }
-
-            .app-overlay {
-                position: fixed;
-                inset: 56px 0 0 0;
-                background: rgba(0, 0, 0, 0.2);
-                display: none;
-                z-index: 998;
-            }
-
-            body.sidebar-open .app-overlay {
-                display: block;
-            }
+        .cancel-delete-btn {
+            border: none;
+            background: transparent;
+            color: var(--pink-strong);
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 8px 12px;
+            cursor: pointer;
         }
 
         @media (max-width: 480px) {
@@ -426,97 +426,11 @@
     </style>
 </head>
 <body>
-    <?php
-    include 'config.php';
-    include 'functions.php';
-
-    $cleanupMessage = '';
-
-    // Delete log entry
-    if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_id'])) {
-        $delete_id = $_POST['delete_id'];
-        $delete_query = "DELETE FROM ojt_logs WHERE id = $delete_id";
-
-        if (mysqli_query($conn, $delete_query)) {
-            header("Location: logs.php?deleted=1");
-            exit;
-        }
-    }
-
-    // Delete unlinked logs (legacy rows not attached to uploaded sheets)
-    if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_unlinked') {
-        $hasSourceColumn = false;
-        $checkColumnForDelete = mysqli_query($conn, "SHOW COLUMNS FROM ojt_logs LIKE 'source_upload_id'");
-        if ($checkColumnForDelete && mysqli_num_rows($checkColumnForDelete) > 0) {
-            $hasSourceColumn = true;
-        }
-
-        if ($hasSourceColumn && mysqli_query($conn, "DELETE FROM ojt_logs WHERE source_upload_id IS NULL")) {
-            $cleaned = max(0, (int)mysqli_affected_rows($conn));
-            header("Location: logs.php?cleaned=$cleaned");
-            exit;
-        }
-    }
-
-    if (isset($_GET['cleaned'])) {
-        $cleanupMessage = 'Deleted unlinked logs: ' . max(0, (int)$_GET['cleaned']) . '.';
-    }
-
-    $unlinkedCount = 0;
-    $checkSourceColumn = mysqli_query($conn, "SHOW COLUMNS FROM ojt_logs LIKE 'source_upload_id'");
-    if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) > 0) {
-        $unlinkedResult = mysqli_query($conn, "SELECT COUNT(*) AS count_unlinked FROM ojt_logs WHERE source_upload_id IS NULL");
-        if ($unlinkedResult) {
-            $unlinkedRow = mysqli_fetch_assoc($unlinkedResult);
-            $unlinkedCount = (int)($unlinkedRow['count_unlinked'] ?? 0);
-        }
-    }
-
-    // Get all logs
-    $logs_query = "
-        SELECT l.*, 
-               CASE 
-                   WHEN h.holiday_date IS NOT NULL THEN h.holiday_name
-                   ELSE 'Regular day'
-               END as day_type
-        FROM ojt_logs l
-        LEFT JOIN holidays h ON l.date = h.holiday_date
-        ORDER BY l.date DESC
-    ";
-
-    $logs_result = mysqli_query($conn, $logs_query);
-    $total_logs = mysqli_num_rows($logs_result);
-
-    // Calculate stats
-    $total_hours = getTotalHours($conn);
-    $total_days = getTotalOJTDays($conn);
-    $days_left = calculateDaysLeft($conn, 500);
-    ?>
-
-    <div class="app-topbar">
-        <button class="app-menu-btn" type="button" onclick="toggleSidebar()">☰</button>
-        <button class="app-desktop-btn" type="button" onclick="toggleCollapse()" title="Collapse or expand sidebar">◧</button>
-        <button class="app-desktop-btn" type="button" onclick="toggleHideSidebar()" title="Hide or show sidebar">↔</button>
-        <div class="app-title">OJT Tracker Navigation</div>
-    </div>
-
-    <aside class="app-sidebar">
-        <nav class="app-nav">
-            <a href="index.php"><span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span></a>
-            <a href="log_entry.php"><span class="nav-icon">➕</span><span class="nav-label">Add Log Entry</span></a>
-            <a href="logs.php" class="active"><span class="nav-icon">📋</span><span class="nav-label">All Logs</span></a>
-            <a href="upload.php"><span class="nav-icon">📤</span><span class="nav-label">Upload Sheets</span></a>
-            <a href="holidays.php"><span class="nav-icon">🎉</span><span class="nav-label">Manage Holidays</span></a>
-        </nav>
-    </aside>
-
-    <div class="app-overlay" onclick="closeSidebar()"></div>
-
-    <div class="app-page">
+    <?php renderDashboardShell('logs.php', $dashboardStats); ?>
 
     <div class="container">
         <div class="header">
-            <h1>📋 All Log Entries</h1>
+            <h1><i class="fa-regular fa-file-lines" aria-hidden="true"></i>All Log Entries</h1>
             <p>Your complete training history</p>
         </div>
 
@@ -540,14 +454,14 @@
                 </div>
             </div>
 
-            <div class="search-box">
-                <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search by date (e.g., Mar 10)...">
+            <div class="logs-search-box">
+                <input type="text" id="searchInput" class="logs-search-input" placeholder="Search by date (e.g., Mar 10)...">
             </div>
 
             <?php if ($unlinkedCount > 0): ?>
                 <div class="cleanup-row">
                     <div class="cleanup-meta">Unlinked logs in MySQL: <?php echo $unlinkedCount; ?></div>
-                    <form method="POST" onsubmit="return confirm('Delete all unlinked logs? This cannot be undone.');">
+                    <form method="POST" class="confirm-action-form" data-item-label="all unlinked logs" data-warning-text="Deleting all unlinked logs cannot be undone.">
                         <input type="hidden" name="action" value="delete_unlinked">
                         <button type="submit" class="cleanup-btn">Delete Unlinked</button>
                     </form>
@@ -574,7 +488,8 @@
                         $date_formatted = date('M d, Y', strtotime($row['date']));
                         $time_in = date('h:i A', strtotime($row['time_in']));
                         $time_out = date('h:i A', strtotime($row['time_out']));
-                        $hours = number_format($row['hours'], 1);
+                        $hours = number_format($row['hours'], 0);
+                        $date_attr = htmlspecialchars($date_formatted, ENT_QUOTES);
 
                         echo "
                         <div class='log-item' data-date='$date_formatted'>
@@ -583,7 +498,7 @@
                                 <div class='log-time'>$time_in → $time_out</div>
                             </div>
                             <div class='log-hours'>$hours hrs</div>
-                            <form method='POST' style='display: inline;' onsubmit=\"return confirm('Delete this log?');\">
+                            <form method='POST' style='display: inline;' class='confirm-action-form' data-item-label='log entry on $date_attr' data-warning-text='Deleting this log cannot be undone.'>
                                 <input type='hidden' name='delete_id' value='{$row['id']}'>
                                 <button type='submit' class='log-delete'>Delete</button>
                             </form>
@@ -591,13 +506,23 @@
                         ";
                     }
                 } else {
-                    echo "<div class='empty-message'>No logs yet. <a href='log_entry.php'>Add your first log!</a></div>";
+                    echo "<div class='empty-message'>No logs yet.</div>";
                 }
                 ?>
             </div>
         </div>
 
-        <a href="index.php" class="btn-back">← Back to Dashboard</a>
+        <a href="index.php" class="btn-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Back to Dashboard</a>
+    </div>
+
+    <div class="confirm-modal-overlay" id="actionConfirmModal" aria-hidden="true">
+        <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="actionModalTitle">
+            <div class="confirm-modal-icon"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i></div>
+            <h5 id="actionModalTitle">Are you sure you want to delete this?</h5>
+            <p><strong id="actionModalSubject">This item</strong> <span id="actionModalWarning">cannot be undone.</span></p>
+            <button type="button" class="confirm-delete-btn" id="confirmActionBtn">Confirm Delete</button>
+            <button type="button" class="cancel-delete-btn" id="cancelActionBtn">Cancel</button>
+        </div>
     </div>
 
     <script>
@@ -626,6 +551,69 @@
                     item.style.display = 'none';
                 }
             });
+        });
+
+        const actionConfirmModal = document.getElementById('actionConfirmModal');
+        const actionModalTitle = document.getElementById('actionModalTitle');
+        const actionModalSubject = document.getElementById('actionModalSubject');
+        const actionModalWarning = document.getElementById('actionModalWarning');
+        const confirmActionBtn = document.getElementById('confirmActionBtn');
+        const cancelActionBtn = document.getElementById('cancelActionBtn');
+
+        let pendingActionForm = null;
+
+        function openActionModal(form) {
+            pendingActionForm = form;
+
+            const itemLabel = form.getAttribute('data-item-label') || 'this item';
+            const warningText = form.getAttribute('data-warning-text') || 'cannot be undone.';
+
+            actionModalTitle.textContent = 'Are you sure you want to delete this?';
+            actionModalSubject.textContent = itemLabel;
+            actionModalWarning.textContent = warningText;
+
+            actionConfirmModal.classList.add('show');
+            actionConfirmModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+        }
+
+        function closeActionModal() {
+            actionConfirmModal.classList.remove('show');
+            actionConfirmModal.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('modal-open');
+            pendingActionForm = null;
+        }
+
+        document.querySelectorAll('.confirm-action-form').forEach(function(form) {
+            form.addEventListener('submit', function(event) {
+                event.preventDefault();
+                openActionModal(form);
+            });
+        });
+
+        confirmActionBtn.addEventListener('click', function() {
+            if (!pendingActionForm) {
+                closeActionModal();
+                return;
+            }
+
+            const formToSubmit = pendingActionForm;
+            closeActionModal();
+            formToSubmit.submit();
+        });
+
+        cancelActionBtn.addEventListener('click', closeActionModal);
+
+        actionConfirmModal.addEventListener('click', function(event) {
+            if (event.target === actionConfirmModal) {
+                closeActionModal();
+            }
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && actionConfirmModal.classList.contains('show')) {
+                closeActionModal();
+            }
         });
 
         function toggleSidebar() {
@@ -665,6 +653,6 @@
             }
         }
     </script>
-</div>
+    <?php closeDashboardShell(); ?>
 </body>
 </html>
