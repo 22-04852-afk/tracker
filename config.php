@@ -744,7 +744,7 @@ CSS;
 
         echo '<div class="app-layout">';
         echo '<aside class="sidebar"><div class="sidebar-card">';
-        echo '<div class="sidebar-head"><span class="brand-badge">L</span><div class="brand-name">Lumina</div><span class="collapse-icon" onclick="toggleCollapse()"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></span></div>';
+        echo '<div class="sidebar-head"><span class="brand-badge">T</span><div class="brand-name">Tracker</div><span class="collapse-icon" onclick="toggleCollapse()"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></span></div>';
         echo '<div class="profile"><div class="avatar"></div><div class="sidebar-title">Hi, ' . htmlspecialchars($displayName) . '</div><div class="sidebar-sub">Admin Level</div></div>';
         echo '<div class="search-box"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Search...</span></div>';
         echo '<nav class="side-nav">';
