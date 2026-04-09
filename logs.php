@@ -152,25 +152,6 @@ $dashboardStats = array(
             font-size: 14px;
         }
 
-        .logs-search-box {
-            margin-bottom: 20px;
-        }
-
-        .logs-search-input {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #f0f0f0;
-            border-radius: 12px;
-            font-size: 14px;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .logs-search-input:focus {
-            outline: none;
-            border-color: var(--pink);
-            box-shadow: 0 0 0 3px rgba(255, 139, 171, 0.1);
-        }
-
         .notice {
             padding: 12px;
             border-radius: 10px;
@@ -442,7 +423,7 @@ $dashboardStats = array(
             <div class="stats-bar">
                 <div class="stat-chip">
                     <span>Total Hours</span>
-                    <strong><?php echo number_format($total_hours, 0); ?></strong>
+                    <strong><?php echo number_format((float)$total_hours, 2); ?></strong>
                 </div>
                 <div class="stat-chip">
                     <span>OJT Days</span>
@@ -452,10 +433,6 @@ $dashboardStats = array(
                     <span>Days Left</span>
                     <strong><?php echo $days_left; ?></strong>
                 </div>
-            </div>
-
-            <div class="logs-search-box">
-                <input type="text" id="searchInput" class="logs-search-input" placeholder="Search by date (e.g., Mar 10)...">
             </div>
 
             <?php if ($unlinkedCount > 0): ?>
@@ -488,7 +465,7 @@ $dashboardStats = array(
                         $date_formatted = date('M d, Y', strtotime($row['date']));
                         $time_in = date('h:i A', strtotime($row['time_in']));
                         $time_out = date('h:i A', strtotime($row['time_out']));
-                        $hours = number_format($row['hours'], 0);
+                        $hours = number_format((float)$row['hours'], 2);
                         $date_attr = htmlspecialchars($date_formatted, ENT_QUOTES);
 
                         echo "
@@ -538,20 +515,6 @@ $dashboardStats = array(
                 document.body.classList.add('sidebar-hidden');
             }
         })();
-
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const logItems = document.querySelectorAll('.log-item');
-
-            logItems.forEach(item => {
-                const date = item.getAttribute('data-date').toLowerCase();
-                if (date.includes(searchTerm)) {
-                    item.style.display = '';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-        });
 
         const actionConfirmModal = document.getElementById('actionConfirmModal');
         const actionModalTitle = document.getElementById('actionModalTitle');

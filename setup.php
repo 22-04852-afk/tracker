@@ -8,7 +8,7 @@ $create_ojt_logs = "CREATE TABLE IF NOT EXISTS ojt_logs (
     date DATE NOT NULL,
     time_in TIME NOT NULL,
     time_out TIME NOT NULL,
-    hours INT NOT NULL,
+    hours DECIMAL(5,2) NOT NULL,
     source_upload_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY unique_date (date)

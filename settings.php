@@ -6,7 +6,88 @@ $message = '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['required_hours'])) {
+    if (isset($_POST['upload_avatar'])) {
+        $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+
+        if ($currentUserId <= 0) {
+            $error = 'You must be logged in to upload a profile picture.';
+        } elseif (!isset($_FILES['avatar'])) {
+            $error = 'Please choose an image file first.';
+        } else {
+            $avatarFile = $_FILES['avatar'];
+            $uploadError = (int) ($avatarFile['error'] ?? UPLOAD_ERR_NO_FILE);
+
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                $error = 'Unable to upload image. Please try again.';
+            } elseif ((int) ($avatarFile['size'] ?? 0) > (5 * 1024 * 1024)) {
+                $error = 'Image is too large. Maximum file size is 5MB.';
+            } else {
+                $tmpPath = (string) ($avatarFile['tmp_name'] ?? '');
+                $originalName = (string) ($avatarFile['name'] ?? '');
+                $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+                $allowedExtensions = array('jpg', 'jpeg', 'png', 'webp', 'gif');
+                if (!in_array($extension, $allowedExtensions, true)) {
+                    $error = 'Invalid image format. Please upload JPG, PNG, WEBP, or GIF.';
+                } else {
+                    $mimeType = '';
+                    if (function_exists('finfo_open')) {
+                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                        if ($finfo) {
+                            $mimeType = (string) finfo_file($finfo, $tmpPath);
+                            finfo_close($finfo);
+                        }
+                    }
+
+                    $allowedMime = array('image/jpeg', 'image/png', 'image/webp', 'image/gif');
+                    if ($mimeType !== '' && !in_array($mimeType, $allowedMime, true)) {
+                        $error = 'Invalid image file. Please upload a valid image.';
+                    } else {
+                        $avatarDir = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'avatars';
+                        if (!is_dir($avatarDir) && !mkdir($avatarDir, 0755, true)) {
+                            $error = 'Avatar upload directory is not writable.';
+                        } else {
+                            $oldAvatarPath = '';
+                            $oldResult = mysqli_query($conn, "SELECT avatar_path FROM users WHERE id = $currentUserId LIMIT 1");
+                            if ($oldResult && ($oldRow = mysqli_fetch_assoc($oldResult))) {
+                                $oldAvatarPath = trim((string) ($oldRow['avatar_path'] ?? ''));
+                            }
+
+                            if ($extension === 'jpeg') {
+                                $extension = 'jpg';
+                            }
+
+                            $randomSuffix = function_exists('random_bytes') ? bin2hex(random_bytes(6)) : uniqid('', true);
+                            $storedName = 'avatar_' . $currentUserId . '_' . $randomSuffix . '.' . $extension;
+                            $targetPath = $avatarDir . DIRECTORY_SEPARATOR . $storedName;
+                            $relativePath = 'uploads/avatars/' . $storedName;
+
+                            if (!move_uploaded_file($tmpPath, $targetPath)) {
+                                $error = 'Failed to save uploaded image. Please try again.';
+                            } else {
+                                $escapedPath = mysqli_real_escape_string($conn, $relativePath);
+
+                                if (!mysqli_query($conn, "UPDATE users SET avatar_path = '$escapedPath' WHERE id = $currentUserId LIMIT 1")) {
+                                    @unlink($targetPath);
+                                    $error = 'Unable to update profile picture right now.';
+                                } else {
+                                    $_SESSION['user_avatar'] = $relativePath;
+                                    $message = 'Profile picture updated successfully.';
+
+                                    if ($oldAvatarPath !== '' && $oldAvatarPath !== $relativePath && strpos($oldAvatarPath, 'uploads/avatars/') === 0) {
+                                        $oldAbsolutePath = __DIR__ . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $oldAvatarPath);
+                                        if (is_file($oldAbsolutePath)) {
+                                            @unlink($oldAbsolutePath);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } elseif (isset($_POST['required_hours'])) {
         $newRequiredHours = (int) ($_POST['required_hours'] ?? 0);
 
         if ($newRequiredHours < 1) {
@@ -38,6 +119,19 @@ $themePresets = getThemePresets();
 $currentThemeKey = getThemeKey($conn);
 $stats = getDashboardStats($conn, $requiredHours);
 $total_hours = $stats['total_hours'];
+$currentAvatarPath = trim((string) ($_SESSION['user_avatar'] ?? ''));
+
+if ($currentAvatarPath === '') {
+    $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+    if ($currentUserId > 0) {
+        $avatarQuery = mysqli_query($conn, "SELECT avatar_path FROM users WHERE id = $currentUserId LIMIT 1");
+        if ($avatarQuery && ($avatarRow = mysqli_fetch_assoc($avatarQuery))) {
+            $currentAvatarPath = trim((string) ($avatarRow['avatar_path'] ?? ''));
+            $_SESSION['user_avatar'] = $currentAvatarPath;
+        }
+    }
+}
+
 $dashboardStats = array(
     'total_hours' => $total_hours,
     'required_hours' => $requiredHours,
@@ -227,6 +321,69 @@ $dashboardStats = array(
             cursor: pointer;
         }
 
+        .account-panel {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .account-avatar {
+            width: 84px;
+            height: 84px;
+            border-radius: 50%;
+            border: 3px solid #f1e6c9;
+            background: radial-gradient(circle at 38% 30%, #f4c5ba, #b8897d 70%);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            flex-shrink: 0;
+        }
+
+        .avatar-form {
+            flex: 1;
+            min-width: 210px;
+        }
+
+        .avatar-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #56607a;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .avatar-input {
+            display: block;
+            width: 100%;
+            font-size: 13px;
+            color: #3c4357;
+            margin-bottom: 8px;
+        }
+
+        .avatar-save-btn {
+            border: none;
+            border-radius: 12px;
+            padding: 10px 14px;
+            background: linear-gradient(135deg, var(--accent-grad-start, var(--pink)), var(--accent-grad-end, var(--pink-strong)));
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: 'Poppins', sans-serif;
+            cursor: pointer;
+        }
+
+        .avatar-hint {
+            margin-top: 8px;
+            font-size: 11px;
+            color: #6d748d;
+        }
+
         @media (max-width: 740px) {
             .settings-grid {
                 grid-template-columns: 1fr;
@@ -268,6 +425,20 @@ $dashboardStats = array(
             <div class="settings-badge"><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Account</div>
             <h3>Profile</h3>
             <p>Manage the dashboard owner details and account identity shown in the sidebar.</p>
+
+            <div class="account-panel">
+                <div class="account-avatar"<?php echo $currentAvatarPath !== '' ? ' style="background-image:url(\'' . htmlspecialchars($currentAvatarPath, ENT_QUOTES) . '\');"' : ''; ?>></div>
+
+                <form method="POST" enctype="multipart/form-data" class="avatar-form">
+                    <label class="avatar-label" for="avatar">
+                        <i class="fa-solid fa-image" aria-hidden="true"></i>
+                        Profile Picture
+                    </label>
+                    <input type="file" id="avatar" name="avatar" class="avatar-input" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" required>
+                    <button type="submit" name="upload_avatar" value="1" class="avatar-save-btn">Upload Picture</button>
+                    <div class="avatar-hint">Allowed: JPG, PNG, WEBP, GIF. Max size: 5MB.</div>
+                </form>
+            </div>
         </div>
 
         <div class="settings-card">

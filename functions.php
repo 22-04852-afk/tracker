@@ -8,7 +8,13 @@ function computeHours($time_in, $time_out) {
     if ($out > $in) {
         $hours = ($out - $in) / 3600;
         // Subtract 1 hour for lunch break
-        return (int) round($hours - 1, 0);
+        $netHours = $hours - 1;
+
+        if ($netHours <= 0) {
+            return 0;
+        }
+
+        return round($netHours, 2);
     }
     
     return 0;
@@ -48,6 +54,59 @@ function parseSpreadsheetDate($rawValue, $formattedValue = '') {
         $timestamp = strtotime($candidate);
         if ($timestamp) {
             return date('Y-m-d', $timestamp);
+        }
+    }
+
+    return '';
+}
+
+// Parse spreadsheet times from Excel serials/fractions or human-readable formats
+function parseSpreadsheetTime($rawValue, $formattedValue = '') {
+    $candidates = array();
+
+    if ($formattedValue !== null && $formattedValue !== '') {
+        $candidates[] = $formattedValue;
+    }
+
+    if ($rawValue !== null && $rawValue !== '' && $rawValue !== $formattedValue) {
+        $candidates[] = $rawValue;
+    }
+
+    foreach ($candidates as $candidate) {
+        if (is_numeric($candidate)) {
+            $numeric = (float) $candidate;
+
+            // Excel stores time as day fractions and datetime as serial days.
+            if ($numeric > 1) {
+                $numeric = $numeric - floor($numeric);
+            }
+
+            if ($numeric >= 0 && $numeric < 1) {
+                $seconds = (int) round($numeric * 86400);
+                $seconds = $seconds % 86400;
+                return gmdate('H:i:s', $seconds);
+            }
+        }
+
+        $candidateText = trim((string) $candidate);
+        if ($candidateText === '') {
+            continue;
+        }
+
+        $formats = array('g:i A', 'g:iA', 'h:i A', 'h:iA', 'H:i:s', 'H:i');
+        foreach ($formats as $format) {
+            $dateTime = DateTime::createFromFormat($format, $candidateText);
+            if ($dateTime instanceof DateTime) {
+                $errors = DateTime::getLastErrors();
+                if (empty($errors['warning_count']) && empty($errors['error_count'])) {
+                    return $dateTime->format('H:i:s');
+                }
+            }
+        }
+
+        $timestamp = strtotime($candidateText);
+        if ($timestamp !== false) {
+            return date('H:i:s', $timestamp);
         }
     }
 
@@ -270,17 +329,24 @@ function ensureUsersTable($conn) {
         full_name VARCHAR(150) NOT NULL,
         username VARCHAR(100) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
+        avatar_path VARCHAR(255) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )";
 
     mysqli_query($conn, $query);
+
+    $avatarColumn = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'avatar_path'");
+    if ($avatarColumn && mysqli_num_rows($avatarColumn) === 0) {
+        mysqli_query($conn, "ALTER TABLE users ADD COLUMN avatar_path VARCHAR(255) NULL AFTER password_hash");
+    }
+
     $initialized = true;
 }
 
 function findUserByUsername($conn, $username) {
     ensureUsersTable($conn);
 
-    $statement = mysqli_prepare($conn, "SELECT id, full_name, username, password_hash FROM users WHERE username = ? LIMIT 1");
+    $statement = mysqli_prepare($conn, "SELECT id, full_name, username, password_hash, avatar_path FROM users WHERE username = ? LIMIT 1");
     if (!$statement) {
         return null;
     }
@@ -356,6 +422,7 @@ function authenticateUser($conn, $username, $password) {
             'id' => (int) $user['id'],
             'full_name' => $user['full_name'],
             'username' => $user['username'],
+            'avatar_path' => (string) ($user['avatar_path'] ?? ''),
         ),
     );
 }
@@ -364,6 +431,7 @@ function initializeUserSession(array $user) {
     $_SESSION['user_id'] = (int) ($user['id'] ?? 0);
     $_SESSION['user_name'] = (string) ($user['full_name'] ?? '');
     $_SESSION['user_username'] = (string) ($user['username'] ?? '');
+    $_SESSION['user_avatar'] = (string) ($user['avatar_path'] ?? '');
 }
 
 // Get total OJT days (excluding holidays and weekends)

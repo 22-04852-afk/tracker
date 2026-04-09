@@ -35,8 +35,14 @@ mysqli_query($conn, "CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(150) NOT NULL,
     username VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    avatar_path VARCHAR(255) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+
+$avatarColumn = mysqli_query($conn, "SHOW COLUMNS FROM users LIKE 'avatar_path'");
+if ($avatarColumn && mysqli_num_rows($avatarColumn) === 0) {
+    mysqli_query($conn, "ALTER TABLE users ADD COLUMN avatar_path VARCHAR(255) NULL AFTER password_hash");
+}
 
 $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
 $publicPages = array('login.php', 'signup.php', 'logout.php', 'setup.php');
@@ -62,9 +68,8 @@ if ($hoursColumn && mysqli_num_rows($hoursColumn) > 0) {
     $hoursInfo = mysqli_fetch_assoc($hoursColumn);
     $hoursType = strtolower($hoursInfo['Type'] ?? '');
 
-    if (strpos($hoursType, 'int') === false) {
-        mysqli_query($conn, "UPDATE ojt_logs SET hours = ROUND(hours, 0)");
-        mysqli_query($conn, "ALTER TABLE ojt_logs MODIFY hours INT NOT NULL");
+    if (strpos($hoursType, 'decimal') === false) {
+        mysqli_query($conn, "ALTER TABLE ojt_logs MODIFY hours DECIMAL(5,2) NOT NULL");
     }
 }
 
@@ -102,6 +107,25 @@ if (!function_exists('renderDashboardShell')) {
         $displayName = trim((string) ($_SESSION['user_name'] ?? ''));
         if ($displayName === '') {
             $displayName = 'Intern';
+        }
+
+        $avatarPath = trim((string) ($_SESSION['user_avatar'] ?? ''));
+        $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+
+        if ($avatarPath === '' && $currentUserId > 0) {
+            $avatarResult = mysqli_query($conn, "SELECT avatar_path FROM users WHERE id = $currentUserId LIMIT 1");
+            if ($avatarResult && ($avatarRow = mysqli_fetch_assoc($avatarResult))) {
+                $avatarPath = trim((string) ($avatarRow['avatar_path'] ?? ''));
+                $_SESSION['user_avatar'] = $avatarPath;
+            }
+        }
+
+        $avatarClass = '';
+        $avatarStyle = '';
+
+        if ($avatarPath !== '' && strpos($avatarPath, '..') === false) {
+            $avatarClass = ' has-image';
+            $avatarStyle = ' style="background-image:url(\'' . htmlspecialchars($avatarPath, ENT_QUOTES) . '\');"';
         }
 
         static $stylesPrinted = false;
@@ -224,6 +248,12 @@ if (!function_exists('renderDashboardShell')) {
                     background: radial-gradient(circle at 38% 30%, #f4c5ba, #b8897d 70%);
                 }
 
+                .avatar.has-image {
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                }
+
                 .avatar::after {
                     content: '';
                     width: 12px;
@@ -249,23 +279,6 @@ if (!function_exists('renderDashboardShell')) {
                     font-weight: 500;
                 }
 
-                .search-box {
-                    background: #fef2f7;
-                    border: 1px solid #f5e2eb;
-                    border-radius: 16px;
-                    padding: 10px 12px;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    color: #a2a9bd;
-                    font-size: 14px;
-                    margin-top: 4px;
-                }
-
-                .search-box i {
-                    font-size: 13px;
-                }
-
                 .side-nav {
                     display: flex;
                     flex-direction: column;
@@ -280,7 +293,7 @@ if (!function_exists('renderDashboardShell')) {
                     margin: 0 3px;
                     box-sizing: border-box;
                     text-decoration: none;
-                    color: #6f7890;
+                    color: #000;
                     border-radius: 16px;
                     padding: 10px 12px;
                     font-size: 13px;
@@ -364,7 +377,7 @@ if (!function_exists('renderDashboardShell')) {
                     margin: 0 3px;
                     box-sizing: border-box;
                     text-decoration: none;
-                    color: #6f7890;
+                    color: #000;
                     border-radius: 16px;
                     padding: 10px 12px;
                     font-size: 13px;
@@ -420,26 +433,6 @@ if (!function_exists('renderDashboardShell')) {
                     color: #6d748d;
                     font-size: 13px;
                     font-weight: 600;
-                }
-
-                .header-search {
-                    flex: 1;
-                    min-width: 260px;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    background: #f4f4f8;
-                    border: 1px solid #e9e9f1;
-                    border-radius: 999px;
-                    padding: 10px 14px;
-                    color: #8f96aa;
-                    font-size: 16px;
-                    font-weight: 500;
-                }
-
-                .header-search i {
-                    font-size: 14px;
-                    color: #9ca4ba;
                 }
 
                 .header-chip {
@@ -521,23 +514,6 @@ if (!function_exists('renderDashboardShell')) {
                     color: #df77a6;
                 }
 
-                .header-icon-btn {
-                    width: 38px;
-                    height: 38px;
-                    border-radius: 50%;
-                    border: 1px solid #e3e5ee;
-                    background: #fff;
-                    color: #8a92a9;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 16px;
-                }
-
-                .header-icon-btn i {
-                    font-size: 15px;
-                }
-
                 .header-avatar {
                     width: 42px;
                     height: 42px;
@@ -547,6 +523,12 @@ if (!function_exists('renderDashboardShell')) {
                     display: inline-block;
                 }
 
+                .header-avatar.has-image {
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                }
+
                 .header-caret {
                     color: #8a92a9;
                     font-size: 14px;
@@ -554,24 +536,6 @@ if (!function_exists('renderDashboardShell')) {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                }
-
-                .menu-btn {
-                    width: 38px;
-                    height: 38px;
-                    border: 1px solid #ead9e3;
-                    border-radius: 10px;
-                    background: #fff;
-                    color: #a06784;
-                    font-size: 16px;
-                    cursor: pointer;
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .menu-btn i {
-                    font-size: 17px;
                 }
 
                 .main {
@@ -595,7 +559,6 @@ if (!function_exists('renderDashboardShell')) {
 
                 body.sidebar-collapsed .brand-name,
                 body.sidebar-collapsed .profile,
-                body.sidebar-collapsed .search-box,
                 body.sidebar-collapsed .side-divider,
                 body.sidebar-collapsed .logout-link .label,
                 body.sidebar-collapsed .side-link .label {
@@ -625,12 +588,6 @@ if (!function_exists('renderDashboardShell')) {
                 }
 
                 @media (max-width: 980px) {
-                    .menu-btn {
-                        display: inline-flex;
-                        align-items: center;
-                        justify-content: center;
-                    }
-
                     .sidebar {
                         transform: translateX(-100%);
                     }
@@ -675,7 +632,6 @@ if (!function_exists('renderDashboardShell')) {
                         font-size: 32px;
                     }
 
-                    .header-search,
                     .header-chip,
                     .header-actions {
                         min-width: 100%;
@@ -709,11 +665,6 @@ CSS;
                     color: #fff;
                 }
 
-                .search-box {
-                    background: var(--pink-soft);
-                    border-color: var(--accent-border);
-                }
-
                 .side-link:hover,
                 .side-link.active {
                     background: var(--pink-soft);
@@ -745,8 +696,7 @@ CSS;
         echo '<div class="app-layout">';
         echo '<aside class="sidebar"><div class="sidebar-card">';
         echo '<div class="sidebar-head"><span class="brand-badge">T</span><div class="brand-name">Tracker</div><span class="collapse-icon" onclick="toggleCollapse()"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></span></div>';
-        echo '<div class="profile"><div class="avatar"></div><div class="sidebar-title">Hi, ' . htmlspecialchars($displayName) . '</div><div class="sidebar-sub">Admin Level</div></div>';
-        echo '<div class="search-box"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Search...</span></div>';
+        echo '<div class="profile"><div class="avatar' . $avatarClass . '"' . $avatarStyle . '></div><div class="sidebar-title">Hi, ' . htmlspecialchars($displayName) . '</div><div class="sidebar-sub">Admin Level</div></div>';
         echo '<nav class="side-nav">';
 
         foreach ($navItems as $page => $item) {
@@ -764,7 +714,7 @@ CSS;
         echo '</nav><div class="side-divider"></div>';
         echo '<div class="sidebar-bottom"><a href="logout.php" class="logout-link"><span class="icon"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></span><span class="label">Logout</span></a></div>';
         echo '</div></aside>';
-        echo '<div class="main-area"><header class="topbar"><div class="topbar-content"><button class="menu-btn" type="button" onclick="toggleSidebar()"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><div class="header-greet"><h2>Hi, ' . htmlspecialchars($displayName) . '</h2><p>Your OJT Progress</p></div><div class="header-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> <span>Search your logs...</span></div><div class="header-chip"><div class="meta">Completed<strong>' . number_format($totalHours, 0) . ' / ' . (int)$requiredHours . ' hrs</strong></div><span class="pct">' . number_format($progressPercent, 0) . '%</span></div><div class="header-actions"><a href="add_logs.php" class="header-btn primary"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Log</a><a href="logs.php" class="header-btn secondary"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Logs</a><a href="uploads.php" class="header-btn secondary"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> Uploads</a><span class="header-icon-btn"><i class="fa-regular fa-bell" aria-hidden="true"></i></span><span class="header-avatar"></span><span class="header-caret"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></div></div></header><main class="main">';
+        echo '<div class="main-area"><header class="topbar"><div class="topbar-content"><div class="header-greet"><h2>Hi, ' . htmlspecialchars($displayName) . '</h2><p>Your OJT Progress</p></div><div class="header-chip"><div class="meta">Completed<strong>' . number_format($totalHours, 0) . ' / ' . (int)$requiredHours . ' hrs</strong></div><span class="pct">' . number_format($progressPercent, 0) . '%</span></div><div class="header-actions"><a href="add_logs.php" class="header-btn primary"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Log</a><a href="logs.php" class="header-btn secondary"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Logs</a><a href="uploads.php" class="header-btn secondary"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> Uploads</a><span class="header-avatar' . $avatarClass . '"' . $avatarStyle . '></span><span class="header-caret"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></div></div></header><main class="main">';
         echo '<div class="overlay" onclick="closeSidebar()"></div>';
     }
 

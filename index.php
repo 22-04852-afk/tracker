@@ -13,6 +13,12 @@ $displayName = trim((string) ($_SESSION['user_name'] ?? ''));
 if ($displayName === '') {
     $displayName = 'Intern';
 }
+
+$showDashboardIntro = !empty($_SESSION['show_dashboard_intro']);
+if ($showDashboardIntro) {
+    unset($_SESSION['show_dashboard_intro']);
+}
+
 $dashboardStats = array(
     'total_hours' => $total_hours,
     'required_hours' => $required_hours,
@@ -456,23 +462,6 @@ $recentLogs = mysqli_query(
             font-weight: 500;
         }
 
-        .search-box {
-            background: var(--pink-soft);
-            border: 1px solid var(--accent-border, var(--line));
-            border-radius: 16px;
-            padding: 10px 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #a2a9bd;
-            font-size: 14px;
-            margin-top: 4px;
-        }
-
-        .search-box i {
-            font-size: 13px;
-        }
-
         .side-nav {
             display: flex;
             flex-direction: column;
@@ -484,7 +473,7 @@ $recentLogs = mysqli_query(
         .side-link {
             width: 100%;
             text-decoration: none;
-            color: #6f7890;
+            color: #000;
             border-radius: 16px;
             padding: 10px 12px;
             font-size: 13px;
@@ -528,7 +517,7 @@ $recentLogs = mysqli_query(
         .logout-link {
             width: 100%;
             text-decoration: none;
-            color: #6f7890;
+            color: #000;
             border-radius: 16px;
             padding: 10px 12px;
             font-size: 13px;
@@ -624,26 +613,6 @@ $recentLogs = mysqli_query(
             font-weight: 600;
         }
 
-        .header-search {
-            flex: 1;
-            min-width: 260px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #f4f4f8;
-            border: 1px solid #e9e9f1;
-            border-radius: 999px;
-            padding: 10px 14px;
-            color: #8f96aa;
-            font-size: 16px;
-            font-weight: 500;
-        }
-
-        .header-search i {
-            font-size: 14px;
-            color: #9ca4ba;
-        }
-
         .header-chip {
             min-width: 220px;
             background: #f7f2ee;
@@ -723,23 +692,6 @@ $recentLogs = mysqli_query(
             color: var(--pink-strong);
         }
 
-        .header-icon-btn {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            border: 1px solid #e3e5ee;
-            background: #fff;
-            color: #8a92a9;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-        }
-
-        .header-icon-btn i {
-            font-size: 15px;
-        }
-
         .header-avatar {
             width: 42px;
             height: 42px;
@@ -801,7 +753,7 @@ $recentLogs = mysqli_query(
             margin-bottom: 8px;
         }
 
-        .label {
+        .progress-label {
             font-size: 13px;
             letter-spacing: 0.08em;
             font-weight: 700;
@@ -993,7 +945,6 @@ $recentLogs = mysqli_query(
 
         body.sidebar-collapsed .brand-name,
         body.sidebar-collapsed .profile,
-        body.sidebar-collapsed .search-box,
         body.sidebar-collapsed .side-divider,
         body.sidebar-collapsed .usage-card,
         body.sidebar-collapsed .logout-link .label,
@@ -1081,7 +1032,6 @@ $recentLogs = mysqli_query(
                 font-size: 30px;
             }
 
-            .header-search,
             .header-chip {
                 min-width: 100%;
             }
@@ -1116,7 +1066,8 @@ $recentLogs = mysqli_query(
          }
     </style>
 </head>
-<body class="intro-active">
+<body class="<?php echo $showDashboardIntro ? 'intro-active' : ''; ?>">
+    <?php if ($showDashboardIntro): ?>
     <div class="dashboard-intro" id="dashboardIntro" aria-hidden="false">
         <div class="intro-card">
             <div class="intro-content">
@@ -1135,9 +1086,10 @@ $recentLogs = mysqli_query(
             </div>
         </div>
     </div>
+    <?php endif; ?>
 <?php renderDashboardShell('index.php', $dashboardStats); ?>
                 <section class="progress-card">
-                    <div class="label">Overall Progress</div>
+                    <div class="progress-label">Overall Progress</div>
                     <div class="progress-head">
                         <div class="score"><?php echo number_format($total_hours, 0); ?> <small>/ <?php echo (int)$required_hours; ?> hrs</small></div>
                         <div class="complete"><?php echo number_format($progress_percent, 0); ?>% Complete</div>

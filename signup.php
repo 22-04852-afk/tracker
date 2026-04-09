@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($result['success'])) {
             initializeUserSession($result['user']);
+            $_SESSION['show_dashboard_intro'] = 1;
             header('Location: index.php');
             exit;
         }

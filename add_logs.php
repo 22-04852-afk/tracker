@@ -15,8 +15,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error = 'Please fill in all fields.';
     } elseif (strtotime($time_out) <= strtotime($time_in)) {
         $error = 'Time out must be after time in.';
-    } elseif (isHoliday($conn, $date)) {
-        $error = 'This date is a holiday and cannot be counted. Please choose another date.';
     } else {
         // Check if date already exists
         $check_query = "SELECT id FROM ojt_logs WHERE date = '$date'";
@@ -28,14 +26,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             // Compute hours
             $hours = computeHours($time_in, $time_out);
 
-            if ($hours < 0) {
+            if ($hours <= 0) {
                 $error = 'Computed hours are invalid.';
             } else {
                 // Insert into database
                 $insert_query = "INSERT INTO ojt_logs (date, time_in, time_out, hours) VALUES ('$date', '$time_in', '$time_out', $hours)";
 
                 if (mysqli_query($conn, $insert_query)) {
-                    $message = "Log entry added successfully. Hours recorded: $hours hours.";
+                    $message = "Log entry added successfully. Hours recorded: " . number_format((float) $hours, 2) . " hours.";
                 } else {
                     $error = "Error: " . mysqli_error($conn);
                 }
@@ -327,7 +325,7 @@ $dashboardStats = array(
                         onchange="checkHoliday(this.value)"
                     >
                     <div class="warning" id="holidayWarning">
-                        <i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i>This is a holiday. Cannot log on holidays.
+                        <i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i>This date is a holiday. You can still log it if you rendered duty.
                     </div>
                 </div>
 
@@ -401,7 +399,7 @@ $dashboardStats = array(
             const holidayName = holidayMap[date];
 
             if (holidayName) {
-                warningElement.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i>${holidayName}. Cannot log on holidays.`;
+                warningElement.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i>${holidayName}. You can still submit if you rendered duty.`;
                 warningElement.classList.add('show');
             } else {
                 warningElement.classList.remove('show');
@@ -417,9 +415,15 @@ $dashboardStats = array(
                 const timeOutDate = new Date('2000-01-01 ' + timeOut);
 
                 if (timeOutDate > timeInDate) {
-                    const hours = (timeOutDate - timeInDate) / (1000 * 60 * 60);
-                    document.getElementById('hoursDisplay').textContent = hours.toFixed(2);
-                    document.getElementById('computedHours').classList.add('show');
+                    const rawHours = (timeOutDate - timeInDate) / (1000 * 60 * 60);
+                    const netHours = rawHours - 1;
+
+                    if (netHours > 0) {
+                        document.getElementById('hoursDisplay').textContent = netHours.toFixed(2);
+                        document.getElementById('computedHours').classList.add('show');
+                    } else {
+                        document.getElementById('computedHours').classList.remove('show');
+                    }
                 } else {
                     document.getElementById('computedHours').classList.remove('show');
                 }

@@ -23,6 +23,7 @@ if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) === 0) {
 
 $uploaded = 0;
 $skipped = 0;
+$skipReasons = [];
 $errors = [];
 $success = false;
 $saved_file_id = null;
@@ -69,6 +70,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
             $spreadsheet = IOFactory::load($storedFilePath);
             $sheet = $spreadsheet->getActiveSheet();
 
+            $recordSkip = function ($rowIndex, $dateLabel, $reason) use (&$skipReasons) {
+                $label = trim((string) $dateLabel);
+                if ($label === '') {
+                    $label = 'Row ' . $rowIndex;
+                }
+
+                $skipReasons[] = array(
+                    'row' => (int) $rowIndex,
+                    'date' => $label,
+                    'reason' => (string) $reason,
+                );
+            };
+
             // Iterate through rows
             foreach ($sheet->getRowIterator() as $rowIndex => $row) {
                 // Skip header row
@@ -78,11 +92,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                 $dateCell = $sheet->getCell("A$rowIndex");
                 $dateValue = $dateCell->getValue();
                 $dateFormattedValue = $dateCell->getFormattedValue();
-                $timeInValue = $sheet->getCell("B$rowIndex")->getFormattedValue();
-                $timeOutValue = $sheet->getCell("C$rowIndex")->getFormattedValue();
+                $timeInCell = $sheet->getCell("B$rowIndex");
+                $timeOutCell = $sheet->getCell("C$rowIndex");
+                $timeInRawValue = $timeInCell->getValue();
+                $timeOutRawValue = $timeOutCell->getValue();
+                $timeInFormattedValue = $timeInCell->getFormattedValue();
+                $timeOutFormattedValue = $timeOutCell->getFormattedValue();
 
                 // Skip empty rows
-                if (!$dateValue || !$timeInValue || !$timeOutValue) {
+                if (!$dateValue || ($timeInRawValue === null || $timeInRawValue === '') || ($timeOutRawValue === null || $timeOutRawValue === '')) {
                     continue;
                 }
 
@@ -91,31 +109,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
 
                 if (!$date || $date === '1970-01-01') {
                     $skipped++;
+                    $recordSkip($rowIndex, $dateFormattedValue, 'Invalid date format.');
                     continue;
                 }
 
-                $timeInTs = strtotime((string)$timeInValue);
-                $timeOutTs = strtotime((string)$timeOutValue);
+                $timeInValue = parseSpreadsheetTime($timeInRawValue, $timeInFormattedValue);
+                $timeOutValue = parseSpreadsheetTime($timeOutRawValue, $timeOutFormattedValue);
 
-                if (!$timeInTs || !$timeOutTs) {
+                if ($timeInValue === '' || $timeOutValue === '') {
                     $skipped++;
-                    continue;
-                }
-
-                $timeInValue = date('H:i:s', $timeInTs);
-                $timeOutValue = date('H:i:s', $timeOutTs);
-
-                // Check if holiday
-                $checkHoliday = mysqli_query($conn, "SELECT * FROM holidays WHERE holiday_date = '$date'");
-                if (mysqli_num_rows($checkHoliday) > 0) {
-                    $skipped++;
+                    $recordSkip($rowIndex, $dateFormattedValue, 'Invalid time format.');
                     continue;
                 }
 
                 // Check if entry already exists
-                $checkDuplicate = mysqli_query($conn, "SELECT * FROM ojt_logs WHERE date = '$date'");
+                $checkDuplicate = mysqli_query($conn, "SELECT id FROM ojt_logs WHERE date = '$date' LIMIT 1");
                 if (mysqli_num_rows($checkDuplicate) > 0) {
                     $skipped++;
+                    $recordSkip($rowIndex, $dateFormattedValue, 'Duplicate date already exists in logs.');
                     continue;
                 }
 
@@ -125,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                 // Validate hours
                 if ($hours <= 0) {
                     $skipped++;
+                    $recordSkip($rowIndex, $dateFormattedValue, 'Computed hours is zero or negative.');
                     continue;
                 }
 
@@ -136,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                     $uploaded++;
                 } else {
                     $skipped++;
+                    $recordSkip($rowIndex, $dateFormattedValue, 'Database insert failed.');
                     $errors[] = "Error inserting row $rowIndex: " . mysqli_error($conn);
                 }
             }
@@ -298,6 +311,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
             color: #c62828;
         }
 
+        .skip-reason-wrap {
+            background: #fff8eb;
+            border: 1px solid #ffe1b0;
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+
+        .skip-reason-title {
+            color: #a04b00;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .skip-reason-list {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 12px;
+            color: #6a4100;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .skip-reason-list li {
+            margin-bottom: 6px;
+        }
+
         .button-group {
             display: flex;
             gap: 12px;
@@ -376,6 +417,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                         <span class="result-label">Skipped</span>
                     </div>
                 </div>
+
+                <?php if (!empty($skipReasons)): ?>
+                    <div class="skip-reason-wrap">
+                        <div class="skip-reason-title">Skipped details:</div>
+                        <ul class="skip-reason-list">
+                            <?php foreach ($skipReasons as $skipReason): ?>
+                                <li>
+                                    Row <?php echo (int) $skipReason['row']; ?>
+                                    (<?php echo htmlspecialchars((string) $skipReason['date']); ?>):
+                                    <?php echo htmlspecialchars((string) $skipReason['reason']); ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
 
                 <?php if (!empty($errors)): ?>
                     <div class="message error">
