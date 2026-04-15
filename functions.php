@@ -468,6 +468,115 @@ function calculateDaysLeft($conn, $required_hours = 500) {
     return $remaining_hours > 0 ? 0 : 0;
 }
 
+function isWorkingOJTDate($conn, $date) {
+    $timestamp = strtotime($date);
+    if ($timestamp === false) {
+        return false;
+    }
+
+    $weekday = (int) date('w', $timestamp);
+    if ($weekday === 0 || $weekday === 6) {
+        return false;
+    }
+
+    $year = (int) date('Y', $timestamp);
+    seedPhilippineHolidays($conn, $year);
+
+    $escapedDate = mysqli_real_escape_string($conn, date('Y-m-d', $timestamp));
+    $holidayResult = mysqli_query($conn, "SELECT id FROM holidays WHERE holiday_date = '$escapedDate' LIMIT 1");
+
+    return !($holidayResult && mysqli_num_rows($holidayResult) > 0);
+}
+
+function getProjectedCompletionDate($conn, $workingDaysNeeded, $startDate = null) {
+    $workingDaysNeeded = max(0, (int) $workingDaysNeeded);
+    if ($workingDaysNeeded <= 0) {
+        return '';
+    }
+
+    $cursor = $startDate ? strtotime($startDate) : strtotime(date('Y-m-d'));
+    if ($cursor === false) {
+        $cursor = strtotime(date('Y-m-d'));
+    }
+
+    $countedDays = 0;
+    while ($countedDays < $workingDaysNeeded) {
+        $cursor = strtotime('+1 day', $cursor);
+        if ($cursor === false) {
+            return '';
+        }
+
+        $dateKey = date('Y-m-d', $cursor);
+        if (isWorkingOJTDate($conn, $dateKey)) {
+            $countedDays++;
+        }
+    }
+
+    return date('Y-m-d', $cursor);
+}
+
+function getCompletionDateDetails($conn, $required_hours = 500) {
+    $required_hours = max(1, (int) $required_hours);
+    $total_hours = getTotalHours($conn);
+    $remaining_hours = max(0, $required_hours - $total_hours);
+    $total_days = getTotalOJTDays($conn);
+
+    $details = array(
+        'mode' => 'unavailable',
+        'date' => '',
+        'days_left' => 0,
+        'remaining_hours' => $remaining_hours,
+        'average_hours_per_day' => 0,
+    );
+
+    if ($remaining_hours <= 0) {
+        $logResult = mysqli_query($conn, "SELECT date, hours FROM ojt_logs ORDER BY date ASC");
+        $runningHours = 0;
+        $completionDate = '';
+
+        if ($logResult) {
+            while ($row = mysqli_fetch_assoc($logResult)) {
+                $runningHours += (float) ($row['hours'] ?? 0);
+                if ($runningHours >= $required_hours) {
+                    $completionDate = (string) ($row['date'] ?? '');
+                    break;
+                }
+            }
+        }
+
+        if ($completionDate === '') {
+            $latestResult = mysqli_query($conn, "SELECT MAX(date) AS latest_date FROM ojt_logs");
+            if ($latestResult && ($latestRow = mysqli_fetch_assoc($latestResult))) {
+                $completionDate = (string) ($latestRow['latest_date'] ?? '');
+            }
+        }
+
+        $details['mode'] = 'completed';
+        $details['date'] = $completionDate;
+
+        return $details;
+    }
+
+    if ($total_days <= 0 || $total_hours <= 0) {
+        return $details;
+    }
+
+    $averagePerDay = $total_hours / $total_days;
+    if ($averagePerDay <= 0) {
+        return $details;
+    }
+
+    $daysLeft = (int) ceil($remaining_hours / $averagePerDay);
+    $projectedDate = getProjectedCompletionDate($conn, $daysLeft);
+
+    $details['mode'] = $projectedDate !== '' ? 'projected' : 'unavailable';
+    $details['date'] = $projectedDate;
+    $details['days_left'] = $daysLeft;
+    $details['average_hours_per_day'] = round($averagePerDay, 2);
+
+    return $details;
+}
+
 function getEasterSundayTimestamp($year) {
     if (function_exists('easter_date')) {
         return easter_date($year);

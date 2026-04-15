@@ -50,6 +50,14 @@ $dashboardStats = array(
     'progress_percent' => min(100, ($requiredHours > 0 ? ($totalHours / $requiredHours) * 100 : 0)),
 );
 
+$completionDetails = getCompletionDateDetails($conn, $requiredHours);
+$completionMode = (string) ($completionDetails['mode'] ?? 'unavailable');
+$completionDate = (string) ($completionDetails['date'] ?? '');
+$completionDateLabel = $completionDate !== '' ? date('F d, Y', strtotime($completionDate)) : '';
+$completionDaysLeft = (int) ($completionDetails['days_left'] ?? 0);
+$completionRemainingHours = (float) ($completionDetails['remaining_hours'] ?? max(0, $requiredHours - $totalHours));
+$completionAverageHours = (float) ($completionDetails['average_hours_per_day'] ?? 0);
+
 $today = date('Y-m-d');
 ?>
 <!DOCTYPE html>
@@ -313,6 +321,58 @@ $today = date('Y-m-d');
             gap: 10px;
         }
 
+        .completion-card {
+            border: 1px solid #ecdde3;
+            border-radius: 16px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            background: linear-gradient(140deg, #fff9fb, #ffffff);
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .completion-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--pink-soft);
+            color: var(--pink-strong);
+            font-size: 16px;
+            border: 1px solid var(--accent-border, var(--line));
+        }
+
+        .completion-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .completion-kicker {
+            color: #a58f99;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .completion-date {
+            color: #2f2530;
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .completion-note {
+            color: #6f6870;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
         .holiday-row {
             border: 1px solid #ecdde3;
             border-radius: 12px;
@@ -366,6 +426,27 @@ $today = date('Y-m-d');
 
         .legend-swatch.work {
             background: #fff;
+        }
+
+        .day-cell.completion-target {
+            border-color: #6ea8ff;
+            box-shadow: inset 0 0 0 1px #6ea8ff;
+            background: linear-gradient(180deg, #eaf4ff, #ffffff);
+            color: #2e5f9d;
+        }
+
+        .day-cell.completion-target .day-holiday-label {
+            color: #2e5f9d;
+        }
+
+        .completion-dot {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2e5f9d;
         }
 
         @media (max-width: 760px) {
@@ -442,6 +523,27 @@ $today = date('Y-m-d');
                 </form>
             </div>
 
+            <div class="completion-card">
+                <span class="completion-icon">
+                    <i class="fa-solid fa-flag-checkered" aria-hidden="true"></i>
+                </span>
+                <div class="completion-meta">
+                    <?php if ($completionMode === 'completed' && $completionDate !== ''): ?>
+                        <span class="completion-kicker">OJT Completed On</span>
+                        <span class="completion-date"><?php echo htmlspecialchars($completionDateLabel); ?></span>
+                        <span class="completion-note">Target reached. Great job!</span>
+                    <?php elseif ($completionMode === 'projected' && $completionDate !== ''): ?>
+                        <span class="completion-kicker">Projected OJT End Date</span>
+                        <span class="completion-date"><?php echo htmlspecialchars($completionDateLabel); ?></span>
+                        <span class="completion-note">~<?php echo $completionDaysLeft; ?> OJT day(s) left, <?php echo number_format($completionRemainingHours, 2); ?> hour(s) remaining at <?php echo number_format($completionAverageHours, 2); ?> hour(s)/day pace.</span>
+                    <?php else: ?>
+                        <span class="completion-kicker">Projected OJT End Date</span>
+                        <span class="completion-date">Not available yet</span>
+                        <span class="completion-note">Add more OJT logs so we can calculate your exact finish date.</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+
             <div class="month-row">
                 <a class="nav-btn" href="calendar.php?month=<?php echo $prevMonth; ?>&year=<?php echo $prevYear; ?>" aria-label="Previous month">
                     <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
@@ -488,14 +590,23 @@ $today = date('Y-m-d');
                     if ($isHoliday) {
                         $classNames .= ' holiday';
                     }
+                    if ($completionDate !== '' && $dateKey === $completionDate) {
+                        $classNames .= ' completion-target';
+                    }
                     ?>
                     <div class="<?php echo $classNames; ?>" title="<?php echo $isHoliday ? htmlspecialchars($monthHolidays[$dateKey]['holiday_name']) : ''; ?>">
                         <span class="day-num"><?php echo $day; ?></span>
                         <?php if ($isHoliday): ?>
                             <span class="day-holiday-label"><?php echo htmlspecialchars($monthHolidays[$dateKey]['holiday_name']); ?></span>
                         <?php endif; ?>
+                        <?php if ($completionDate !== '' && $dateKey === $completionDate): ?>
+                            <span class="day-holiday-label">OJT End</span>
+                        <?php endif; ?>
                         <?php if ($isHoliday): ?>
                             <span class="holiday-dot" aria-hidden="true"></span>
+                        <?php endif; ?>
+                        <?php if ($completionDate !== '' && $dateKey === $completionDate): ?>
+                            <span class="completion-dot" aria-hidden="true"></span>
                         <?php endif; ?>
                     </div>
                 <?php endfor; ?>
@@ -516,6 +627,7 @@ $today = date('Y-m-d');
         <div class="legend">
             <span class="legend-item"><span class="legend-swatch holiday"></span>Holiday</span>
             <span class="legend-item"><span class="legend-swatch work"></span>Working Day</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:#eaf4ff; border-color:#6ea8ff;"></span>OJT End Date</span>
             <span class="legend-item">Today</span>
         </div>
     </div>
