@@ -418,6 +418,21 @@ if (!function_exists('renderDashboardShell')) {
                     flex-wrap: wrap;
                 }
 
+                .mobile-menu-btn {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 12px;
+                    border: 1px solid #e4d8df;
+                    background: #fff;
+                    color: #5f5b6e;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 15px;
+                    cursor: pointer;
+                    flex-shrink: 0;
+                }
+
                 .header-greet {
                     min-width: 190px;
                 }
@@ -617,6 +632,14 @@ if (!function_exists('renderDashboardShell')) {
                     body.sidebar-open .overlay {
                         display: block;
                     }
+
+                    body.sidebar-open {
+                        overflow: hidden;
+                    }
+
+                    .mobile-menu-btn {
+                        display: inline-flex;
+                    }
                 }
 
                 @media (max-width: 640px) {
@@ -714,12 +737,71 @@ CSS;
         echo '</nav><div class="side-divider"></div>';
         echo '<div class="sidebar-bottom"><a href="logout.php" class="logout-link"><span class="icon"><i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i></span><span class="label">Logout</span></a></div>';
         echo '</div></aside>';
-        echo '<div class="main-area"><header class="topbar"><div class="topbar-content"><div class="header-greet"><h2>Hi, ' . htmlspecialchars($displayName) . '</h2><p>Your OJT Progress</p></div><div class="header-chip"><div class="meta">Completed<strong>' . number_format($totalHours, 0) . ' / ' . (int)$requiredHours . ' hrs</strong></div><span class="pct">' . number_format($progressPercent, 0) . '%</span></div><div class="header-actions"><a href="add_logs.php" class="header-btn primary"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Log</a><a href="logs.php" class="header-btn secondary"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Logs</a><a href="uploads.php" class="header-btn secondary"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> Uploads</a><span class="header-avatar' . $avatarClass . '"' . $avatarStyle . '></span><span class="header-caret"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></div></div></header><main class="main">';
+        echo '<div class="main-area"><header class="topbar"><div class="topbar-content"><button type="button" class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open menu"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><div class="header-greet"><h2>Hi, ' . htmlspecialchars($displayName) . '</h2><p>Your OJT Progress</p></div><div class="header-chip"><div class="meta">Completed<strong>' . number_format($totalHours, 0) . ' / ' . (int)$requiredHours . ' hrs</strong></div><span class="pct">' . number_format($progressPercent, 0) . '%</span></div><div class="header-actions"><a href="add_logs.php" class="header-btn primary"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Log</a><a href="logs.php" class="header-btn secondary"><i class="fa-regular fa-file-lines" aria-hidden="true"></i> Logs</a><a href="uploads.php" class="header-btn secondary"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i> Uploads</a><span class="header-avatar' . $avatarClass . '"' . $avatarStyle . '></span><span class="header-caret"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></span></div></div></header><main class="main">';
         echo '<div class="overlay" onclick="closeSidebar()"></div>';
     }
 
     function closeDashboardShell() {
         echo '</main></div></div>';
+        echo "<script>
+            (function initSharedSidebarState() {
+                const isMobile = window.matchMedia('(max-width: 980px)');
+                const collapsed = localStorage.getItem('sidebarCollapsed') === '1';
+                const hidden = localStorage.getItem('sidebarHidden') === '1';
+
+                if (!isMobile.matches && collapsed) {
+                    document.body.classList.add('sidebar-collapsed');
+                }
+
+                if (!isMobile.matches && hidden) {
+                    document.body.classList.add('sidebar-hidden');
+                }
+
+                if (isMobile.matches) {
+                    document.body.classList.remove('sidebar-collapsed');
+                    document.body.classList.remove('sidebar-hidden');
+                    document.body.classList.remove('sidebar-open');
+                }
+            })();
+
+            function toggleSidebar() {
+                document.body.classList.toggle('sidebar-open');
+            }
+
+            function closeSidebar() {
+                document.body.classList.remove('sidebar-open');
+            }
+
+            function toggleCollapse() {
+                if (window.matchMedia('(max-width: 980px)').matches) {
+                    toggleSidebar();
+                    return;
+                }
+
+                if (document.body.classList.contains('sidebar-hidden')) {
+                    document.body.classList.remove('sidebar-hidden');
+                    localStorage.setItem('sidebarHidden', '0');
+                }
+
+                document.body.classList.toggle('sidebar-collapsed');
+                localStorage.setItem('sidebarCollapsed', document.body.classList.contains('sidebar-collapsed') ? '1' : '0');
+            }
+
+            function toggleHideSidebar() {
+                if (window.matchMedia('(max-width: 980px)').matches) {
+                    closeSidebar();
+                    return;
+                }
+
+                document.body.classList.toggle('sidebar-hidden');
+                localStorage.setItem('sidebarHidden', document.body.classList.contains('sidebar-hidden') ? '1' : '0');
+
+                if (document.body.classList.contains('sidebar-hidden')) {
+                    document.body.classList.remove('sidebar-collapsed');
+                    localStorage.setItem('sidebarCollapsed', '0');
+                }
+            }
+        </script>";
     }
 }
 

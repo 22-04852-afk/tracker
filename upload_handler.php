@@ -22,6 +22,7 @@ if ($checkSourceColumn && mysqli_num_rows($checkSourceColumn) === 0) {
 }
 
 $uploaded = 0;
+$updated = 0;
 $skipped = 0;
 $skipReasons = [];
 $errors = [];
@@ -122,14 +123,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                     continue;
                 }
 
-                // Check if entry already exists
-                $checkDuplicate = mysqli_query($conn, "SELECT id FROM ojt_logs WHERE date = '$date' LIMIT 1");
-                if (mysqli_num_rows($checkDuplicate) > 0) {
-                    $skipped++;
-                    $recordSkip($rowIndex, $dateFormattedValue, 'Duplicate date already exists in logs.');
-                    continue;
-                }
-
                 // Compute hours
                 $hours = computeHours($timeInValue, $timeOutValue);
 
@@ -140,8 +133,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                     continue;
                 }
 
-                // Insert into database
-                $insertQuery = "INSERT INTO ojt_logs (date, time_in, time_out, hours, source_upload_id) 
+                // If date already exists, update row instead of skipping.
+                $checkDuplicate = mysqli_query($conn, "SELECT id, time_in, time_out, hours FROM ojt_logs WHERE date = '$date' LIMIT 1");
+                if ($checkDuplicate && mysqli_num_rows($checkDuplicate) > 0) {
+                    $existing = mysqli_fetch_assoc($checkDuplicate);
+                    $existingTimeIn = (string) ($existing['time_in'] ?? '');
+                    $existingTimeOut = (string) ($existing['time_out'] ?? '');
+                    $existingHours = (float) ($existing['hours'] ?? 0);
+                    $existingId = (int) ($existing['id'] ?? 0);
+
+                    $isSameTimeIn = $existingTimeIn === $timeInValue;
+                    $isSameTimeOut = $existingTimeOut === $timeOutValue;
+                    $isSameHours = abs($existingHours - (float) $hours) < 0.01;
+
+                    if ($isSameTimeIn && $isSameTimeOut && $isSameHours) {
+                        $skipped++;
+                        $recordSkip($rowIndex, $dateFormattedValue, 'Already exists with the same values.');
+                        continue;
+                    }
+
+                    $updateQuery = "UPDATE ojt_logs SET time_in = '$timeInValue', time_out = '$timeOutValue', hours = '$hours', source_upload_id = $saved_file_id WHERE id = $existingId LIMIT 1";
+
+                    if (mysqli_query($conn, $updateQuery)) {
+                        $updated++;
+                    } else {
+                        $skipped++;
+                        $recordSkip($rowIndex, $dateFormattedValue, 'Failed to update existing log.');
+                        $errors[] = "Error updating row $rowIndex: " . mysqli_error($conn);
+                    }
+
+                    continue;
+                }
+
+                // Insert as new date when no existing log is found.
+                $insertQuery = "INSERT INTO ojt_logs (date, time_in, time_out, hours, source_upload_id)
                                VALUES ('$date', '$timeInValue', '$timeOutValue', '$hours', $saved_file_id)";
 
                 if (mysqli_query($conn, $insertQuery)) {
@@ -157,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
 
             mysqli_query(
                 $conn,
-                "UPDATE uploaded_files SET uploaded_count = $uploaded, skipped_count = $skipped WHERE id = $saved_file_id"
+                "UPDATE uploaded_files SET uploaded_count = " . ($uploaded + $updated) . ", skipped_count = $skipped WHERE id = $saved_file_id"
             );
         }
     } catch (Exception $e) {
@@ -396,7 +421,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
 <body>
     <div class="container">
         <div class="header">
-            <h1><?php echo $success && $uploaded > 0 ? '✅ Upload Complete!' : '⚠️ Upload Result'; ?></h1>
+            <h1><?php echo $success && ($uploaded + $updated) > 0 ? '✅ Upload Complete!' : '⚠️ Upload Result'; ?></h1>
         </div>
 
         <div class="card">
@@ -407,10 +432,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['excel'])) {
                     </div>
                 <?php endif; ?>
 
+                <?php if ($updated > 0): ?>
+                    <div class="message success">
+                        ♻️ Updated <?php echo $updated; ?> existing date entr<?php echo $updated === 1 ? 'y' : 'ies'; ?>.
+                    </div>
+                <?php endif; ?>
+
                 <div class="results-summary">
                     <div class="result-item success">
                         <span class="result-value"><?php echo $uploaded; ?></span>
                         <span class="result-label">Imported</span>
+                    </div>
+                    <div class="result-item success">
+                        <span class="result-value"><?php echo $updated; ?></span>
+                        <span class="result-label">Updated</span>
                     </div>
                     <div class="result-item skipped">
                         <span class="result-value"><?php echo $skipped; ?></span>
